@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Retro Web Tamagotchi</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="device" aria-label="Retro Web Tamagotchi">
+      <header class="brand">
+        <span>RETRO</span>
+        <strong>WEB TAMAGO</strong>
+      </header>
+
+      <section class="lcd-shell" aria-label="Pet screen">
+        <div class="icon-row icon-row-top">
+          <button class="tool-button" type="button" data-action="showFoodMenu" title="Food">
+            <span aria-hidden="true">M</span>
+            <span class="sr-only">Food</span>
+          </button>
+          <button class="tool-button" type="button" data-action="toggleSleep" title="Light">
+            <span aria-hidden="true">L</span>
+            <span class="sr-only">Light</span>
+          </button>
+          <button class="tool-button" type="button" data-action="playGame" title="Play">
+            <span aria-hidden="true">G</span>
+            <span class="sr-only">Play</span>
+          </button>
+          <button class="tool-button" type="button" data-action="healPet" title="Medicine">
+            <span aria-hidden="true">✚</span>
+            <span class="sr-only">Medicine</span>
+          </button>
+        </div>
+
+        <div class="lcd">
+          <div class="status-bar">
+            <span id="clockDisplay">00:00:00</span>
+            <span id="messageDisplay">READY</span>
+            <span id="attentionLight" class="attention-light" aria-label="Attention"></span>
+          </div>
+
+          <div class="screen" id="screen" aria-live="polite">
+            <div class="poop-layer" id="poopLayer"></div>
+            <div class="pet-stage" id="petStage">
+              <canvas class="pixel-pet" id="pixelPet" width="32" height="32" aria-hidden="true"></canvas>
+            </div>
+            <div class="menu-panel" id="selectPanel" hidden>
+              <h2>Choose Pet</h2>
+              <div class="pet-choice-grid">
+                <button class="lcd-button" type="button" data-pet-choice="sprout">SPROUT</button>
+                <button class="lcd-button" type="button" data-pet-choice="dino">DINO</button>
+                <button class="lcd-button" type="button" data-pet-choice="panda">PANDA</button>
+                <button class="lcd-button" type="button" data-pet-choice="bunny">BUNNY</button>
+                <button class="lcd-button" type="button" data-pet-choice="shiba">SHIBA</button>
+                <button class="lcd-button" type="button" data-pet-choice="jelly">JELLY</button>
+              </div>
+            </div>
+            <div class="menu-panel" id="foodPanel" hidden>
+              <h2>Food</h2>
+              <button class="lcd-button" type="button" data-action="feedMeal">MEAL</button>
+              <button class="lcd-button" type="button" data-action="feedSnack">SNACK</button>
+              <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
+            </div>
+            <div class="menu-panel" id="gamePanel" hidden>
+              <h2>Guess</h2>
+              <p id="gamePrompt">Pick 1-3</p>
+              <div class="choice-row">
+                <button class="lcd-button" type="button" data-game-choice="1">1</button>
+                <button class="lcd-button" type="button" data-game-choice="2">2</button>
+                <button class="lcd-button" type="button" data-game-choice="3">3</button>
+              </div>
+              <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
+            </div>
+            <div class="menu-panel" id="debugPanel" hidden>
+              <h2>Debug</h2>
+              <button class="lcd-button" type="button" data-debug-time="3600000">+1H</button>
+              <button class="lcd-button" type="button" data-debug-time="36000000">+10H</button>
+              <button class="lcd-button" type="button" data-debug-time="259200000">+3D</button>
+              <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
+            </div>
+            <div class="status-panel" id="statusPanel" hidden></div>
+          </div>
+
+          <div class="meter-row" aria-label="Pet meters">
+            <div class="meter">
+              <span>HUN</span>
+              <div id="hungerMeter" class="meter-dots"></div>
+            </div>
+            <div class="meter">
+              <span>HAP</span>
+              <div id="happinessMeter" class="meter-dots"></div>
+            </div>
+            <div class="meter">
+              <span>ENG</span>
+              <div class="energy-track"><span id="energyBar"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="icon-row icon-row-bottom">
+          <button class="tool-button" type="button" data-action="cleanPoop" title="Clean">
+            <span aria-hidden="true">W</span>
+            <span class="sr-only">Clean</span>
+          </button>
+          <button class="tool-button" type="button" data-action="showStatus" title="Status">
+            <span aria-hidden="true">S</span>
+            <span class="sr-only">Status</span>
+          </button>
+          <button class="tool-button" type="button" data-action="disciplinePet" title="Discipline">
+            <span aria-hidden="true">D</span>
+            <span class="sr-only">Discipline</span>
+          </button>
+          <button class="tool-button button-reset" type="button" data-action="resetGame" title="Reset">
+            <span aria-hidden="true">↻</span>
+            <span class="sr-only">Reset</span>
+          </button>
+        </div>
+      </section>
+
+      <footer class="controls">
+        <button class="main-button" type="button" data-action="showFoodMenu">FOOD</button>
+        <button class="main-button" type="button" data-action="showDebug">DEBUG</button>
+        <button class="main-button" type="button" data-action="toggleSound">SND</button>
+        <button class="main-button" type="button" data-action="resetGame">RESET</button>
+      </footer>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
