@@ -13,7 +13,7 @@
     hungerDecayMs: 5 * MINUTE,
     happinessDecayMs: 6 * MINUTE,
     awakeEnergyDecayMs: 4 * MINUTE,
-    sleepEnergyGainMs: 90 * 1000,
+    sleepEnergyGainMs: 10 * 1000,
     poopAfterMealMs: 4 * MINUTE,
     ageStepMs: DAY,
     sicknessCheckMs: 8 * MINUTE,
@@ -736,7 +736,7 @@
     target.accumulators[key] += elapsedMs;
     const steps = consumeSteps(target.accumulators, key, rate);
     if (steps > 0) {
-      const delta = target.isSleeping ? steps * 6 : steps * -3;
+      const delta = target.isSleeping ? steps : steps * -3;
       target.energy = clamp(target.energy + delta, 0, 100);
     }
   }
@@ -976,6 +976,8 @@
 
     mutate(() => {
       state.isSleeping = !state.isSleeping;
+      state.accumulators.energyAwake = 0;
+      state.accumulators.energySleep = 0;
       state.message = state.isSleeping ? "LIGHT OFF" : "WAKE";
       activePanel = null;
       gameRound = null;
