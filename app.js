@@ -5,6 +5,9 @@
   const SAVE_INTERVAL_MS = 5000;
   const TICK_MS = 1000;
   const OFFLINE_STEP_MS = 5 * 60 * 1000;
+  const IDB_NAME = "retro-web-tamago-db";
+  const IDB_STORE = "saves";
+  const IDB_SAVE_KEY = "current";
   const MINUTE = 60 * 1000;
   const HOUR = 60 * MINUTE;
   const DAY = 24 * HOUR;
@@ -588,6 +591,8 @@
   let activePanel = state.petType ? null : "select";
   let gameRound = null;
   let audioContext = null;
+  let idbPromise = null;
+  let backupRestorePending = !state.petType;
 
   function createLogbook() {
     return {
@@ -653,7 +658,7 @@
 
   function loadState() {
     const now = Date.now();
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readLocalSave();
     if (!raw) {
       return createNewState(now);
     }
@@ -667,6 +672,15 @@
     } catch (error) {
       console.warn("Failed to load Tamagotchi state. Starting new game.", error);
       return createNewState(now);
+    }
+  }
+
+  function readLocalSave() {
+    try {
+      return localStorage.getItem(STORAGE_KEY);
+    } catch (error) {
+      console.warn("Local save unavailable.", error);
+      return null;
     }
   }
 
@@ -757,7 +771,107 @@
 
   function saveState() {
     state.lastSavedTimestamp = Date.now();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const serialized = JSON.stringify(state);
+    try {
+      localStorage.setItem(STORAGE_KEY, serialized);
+    } catch (error) {
+      console.warn("Local save failed.", error);
+    }
+    saveIndexedBackup(JSON.parse(serialized));
+  }
+
+  function openSaveDb() {
+    if (typeof indexedDB === "undefined") {
+      return Promise.reject(new Error("IndexedDB unavailable"));
+    }
+
+    if (idbPromise) {
+      return idbPromise;
+    }
+
+    idbPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(IDB_NAME, 1);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE);
+        }
+      };
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+      request.onblocked = () => reject(new Error("IndexedDB blocked"));
+    });
+
+    idbPromise.catch(() => {
+      idbPromise = null;
+    });
+
+    return idbPromise;
+  }
+
+  function saveIndexedBackup(snapshot) {
+    if (!snapshot || typeof indexedDB === "undefined") {
+      return;
+    }
+
+    if (backupRestorePending && !snapshot.petType) {
+      return;
+    }
+
+    openSaveDb()
+      .then((db) => new Promise((resolve, reject) => {
+        const transaction = db.transaction(IDB_STORE, "readwrite");
+        transaction.objectStore(IDB_STORE).put(snapshot, IDB_SAVE_KEY);
+        transaction.oncomplete = () => resolve(true);
+        transaction.onerror = () => reject(transaction.error || new Error("IndexedDB save failed"));
+      }))
+      .catch((error) => {
+        console.warn("Backup save failed.", error);
+      });
+  }
+
+  function readIndexedBackup() {
+    if (typeof indexedDB === "undefined") {
+      return Promise.resolve(null);
+    }
+
+    return openSaveDb()
+      .then((db) => new Promise((resolve, reject) => {
+        const transaction = db.transaction(IDB_STORE, "readonly");
+        const request = transaction.objectStore(IDB_STORE).get(IDB_SAVE_KEY);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error || new Error("IndexedDB read failed"));
+      }))
+      .catch((error) => {
+        console.warn("Backup restore failed.", error);
+        return null;
+      });
+  }
+
+  function restoreIndexedBackupIfNeeded() {
+    if (state.petType) {
+      backupRestorePending = false;
+      return;
+    }
+
+    readIndexedBackup().then((backup) => {
+      backupRestorePending = false;
+      if (!backup || !backup.petType || state.petType) {
+        return;
+      }
+
+      const now = Date.now();
+      const restored = normalizeState(backup, now);
+      applyOfflineTime(restored, Math.max(0, now - restored.lastSavedTimestamp));
+      restored.lastSavedTimestamp = now;
+      restored.message = restored.isDead ? "DEAD" : "SAVE BACK";
+      state = restored;
+      activePanel = state.petType ? null : "select";
+      saveState();
+      render();
+    });
   }
 
   function getDayStamp(now = Date.now()) {
@@ -2059,12 +2173,16 @@
         <span>Version</span><strong>${APP_VERSION}</strong>
         <span>Build</span><strong>Static Web</strong>
         <span>Engine</span><strong>Vanilla JS</strong>
-        <span>Save</span><strong>localStorage</strong>
+        <span>Save</span><strong>Local + IDB</strong>
         <span>Deploy</span><strong>Vercel OK</strong>
       </div>
       <p>Save data stays in this browser/device.</p>
       <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
     `;
+  }
+
+  function saveBeforeBackground() {
+    saveState();
   }
 
   function formatHour(hour) {
@@ -2271,6 +2389,7 @@
     dailyRefill: DAILY_REFILL,
     shopItems: SHOP_ITEMS,
     storageKey: STORAGE_KEY,
+    backupDbName: IDB_NAME,
     simulateTime,
     simulateOffline(milliseconds) {
       return simulateTime(milliseconds);
@@ -2279,7 +2398,14 @@
 
   bindControls();
   render();
+  restoreIndexedBackupIfNeeded();
   timers.tick = window.setInterval(tick, TICK_MS);
   timers.save = window.setInterval(saveState, SAVE_INTERVAL_MS);
   window.addEventListener("beforeunload", saveState);
+  window.addEventListener("pagehide", saveBeforeBackground);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      saveBeforeBackground();
+    }
+  });
 })();
