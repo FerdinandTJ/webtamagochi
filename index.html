@@ -11,6 +11,10 @@
       <header class="brand">
         <span>RETRO</span>
         <strong>WEB TAMAGO</strong>
+        <div class="brand-actions" aria-label="Help and app info">
+          <button class="header-button" type="button" data-action="showManual" title="Manual">?</button>
+          <button class="header-button" type="button" data-action="showAbout" title="About">i</button>
+        </div>
       </header>
 
       <section class="lcd-shell" aria-label="Pet screen">
@@ -65,11 +69,14 @@
             </div>
             <div class="menu-panel" id="foodPanel" hidden>
               <h2>Food</h2>
+              <p id="foodCoinDisplay">COIN 0</p>
               <button class="lcd-button" type="button" data-action="feedMeal" id="mealButton">MEAL</button>
               <button class="lcd-button" type="button" data-action="feedSnack" id="snackButton">SNACK</button>
               <button class="lcd-button" type="button" data-action="feedTreat" id="treatButton">TREAT</button>
+              <button class="lcd-button" type="button" data-action="showShop">SHOP</button>
               <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
             </div>
+            <div class="menu-panel" id="shopPanel" hidden></div>
             <div class="menu-panel" id="gamePanel" hidden>
               <h2>Timing</h2>
               <p id="gamePrompt">Stop near 50</p>
@@ -91,14 +98,9 @@
               <button class="lcd-button" type="button" data-action="requestNotifications">NOTIFY</button>
               <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
             </div>
-            <div class="menu-panel" id="debugPanel" hidden>
-              <h2>Debug</h2>
-              <button class="lcd-button" type="button" data-debug-time="3600000">+1H</button>
-              <button class="lcd-button" type="button" data-debug-time="36000000">+10H</button>
-              <button class="lcd-button" type="button" data-debug-time="259200000">+3D</button>
-              <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
-            </div>
             <div class="status-panel" id="statusPanel" hidden></div>
+            <div class="status-panel info-panel" id="manualPanel" hidden></div>
+            <div class="status-panel info-panel" id="aboutPanel" hidden></div>
           </div>
 
           <div class="meter-row" aria-label="Pet meters">
@@ -141,7 +143,6 @@
         <button class="main-button" type="button" data-action="showFoodMenu">FOOD</button>
         <button class="main-button" type="button" data-action="showLog">LOG</button>
         <button class="main-button" type="button" data-action="showSettings">SET</button>
-        <button class="main-button" type="button" data-action="showDebug">DEBUG</button>
         <button class="main-button" type="button" data-action="toggleSound">SND</button>
         <button class="main-button" type="button" data-action="resetGame">RESET</button>
       </footer>

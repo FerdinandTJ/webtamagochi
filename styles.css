@@ -52,15 +52,39 @@ button {
 .brand {
   align-items: center;
   color: var(--case-dark);
-  display: flex;
+  display: grid;
   font-size: 13px;
-  justify-content: space-between;
+  grid-template-columns: 1fr auto 1fr;
   letter-spacing: 0;
   margin: 0 14px 12px;
 }
 
 .brand strong {
   font-size: 16px;
+  text-align: center;
+}
+
+.brand-actions {
+  display: flex;
+  gap: 6px;
+  justify-self: end;
+}
+
+.header-button {
+  align-items: center;
+  background: var(--button-light);
+  border: 2px solid var(--case-dark);
+  border-radius: 6px;
+  color: var(--case-dark);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  height: 24px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  width: 24px;
 }
 
 .lcd-shell {
@@ -238,6 +262,23 @@ button {
   overflow: auto;
 }
 
+.info-panel {
+  text-align: left;
+}
+
+.info-panel p {
+  margin: 0 0 8px;
+}
+
+.info-panel ul {
+  margin: 0 0 10px;
+  padding-left: 17px;
+}
+
+.info-panel li {
+  margin-bottom: 4px;
+}
+
 .menu-panel h2,
 .status-panel h2 {
   border-bottom: 2px solid var(--lcd-dark);
@@ -260,6 +301,23 @@ button {
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+}
+
+.shop-list {
+  display: grid;
+  gap: 6px;
+}
+
+.shop-row {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 1fr auto 46px;
+}
+
+.shop-row .lcd-button {
+  min-height: 24px;
+  padding-inline: 2px;
 }
 
 .pet-choice-grid {
@@ -336,7 +394,7 @@ button {
 .controls {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   margin-top: 18px;
 }
 

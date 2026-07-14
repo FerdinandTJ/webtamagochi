@@ -8,6 +8,7 @@
   const MINUTE = 60 * 1000;
   const HOUR = 60 * MINUTE;
   const DAY = 24 * HOUR;
+  const APP_VERSION = "1.2.0";
 
   const RULES = {
     hungerDecayMs: 5 * MINUTE,
@@ -21,6 +22,31 @@
     sicknessCheckMs: 8 * MINUTE,
     deathAfterCriticalMs: 24 * HOUR,
     disciplineCallMs: 12 * MINUTE,
+  };
+
+  const DAILY_REFILL = {
+    meal: 4,
+    snack: 4,
+    treat: 1,
+    medicine: 2,
+  };
+
+  const SHOP_ITEMS = {
+    meal: {
+      label: "MEAL",
+      cost: 2,
+      stockKey: "meal",
+    },
+    snack: {
+      label: "SNACK",
+      cost: 3,
+      stockKey: "snack",
+    },
+    medicine: {
+      label: "MED",
+      cost: 5,
+      stockKey: "medicine",
+    },
   };
 
   const PET_TYPES = {
@@ -78,16 +104,19 @@
     selectPanel: document.getElementById("selectPanel"),
     onboardingPanel: document.getElementById("onboardingPanel"),
     foodPanel: document.getElementById("foodPanel"),
+    foodCoinDisplay: document.getElementById("foodCoinDisplay"),
     mealButton: document.getElementById("mealButton"),
     snackButton: document.getElementById("snackButton"),
     treatButton: document.getElementById("treatButton"),
+    shopPanel: document.getElementById("shopPanel"),
     gamePanel: document.getElementById("gamePanel"),
     gamePrompt: document.getElementById("gamePrompt"),
     logPanel: document.getElementById("logPanel"),
     settingsPanel: document.getElementById("settingsPanel"),
     rhythmDisplay: document.getElementById("rhythmDisplay"),
-    debugPanel: document.getElementById("debugPanel"),
     statusPanel: document.getElementById("statusPanel"),
+    manualPanel: document.getElementById("manualPanel"),
+    aboutPanel: document.getElementById("aboutPanel"),
     hungerMeter: document.getElementById("hungerMeter"),
     happinessMeter: document.getElementById("happinessMeter"),
     energyBar: document.getElementById("energyBar"),
@@ -579,6 +608,7 @@
       health: "healthy",
       discipline: 0,
       weight: 10,
+      coins: 0,
       petType: null,
       petName: "",
       personality: "balanced",
@@ -597,10 +627,7 @@
         sleepHour: 22,
       },
       inventory: {
-        meal: 5,
-        snack: 3,
-        treat: 1,
-        medicine: 2,
+        ...DAILY_REFILL,
         lastRefillDay: getDayStamp(now),
       },
       events: [],
@@ -659,6 +686,7 @@
     merged.energy = clamp(Math.round(merged.energy), 0, 100);
     merged.discipline = clamp(Math.round(merged.discipline), 0, 100);
     merged.weight = Math.max(1, Math.round(merged.weight));
+    merged.coins = clamp(Math.floor(merged.coins || 0), 0, 999);
     merged.petType = normalizePetType(merged.petType);
     merged.petName = merged.petType ? PET_TYPES[merged.petType].label : "";
     merged.personality = merged.petType ? PET_TYPES[merged.petType].personality : "balanced";
@@ -691,10 +719,10 @@
 
   function normalizeInventory(input = {}, now = Date.now()) {
     return {
-      meal: clamp(Math.floor(input.meal ?? 5), 0, 9),
-      snack: clamp(Math.floor(input.snack ?? 3), 0, 9),
-      treat: clamp(Math.floor(input.treat ?? 1), 0, 9),
-      medicine: clamp(Math.floor(input.medicine ?? 2), 0, 9),
+      meal: clamp(Math.floor(input.meal ?? DAILY_REFILL.meal), 0, 9),
+      snack: clamp(Math.floor(input.snack ?? DAILY_REFILL.snack), 0, 9),
+      treat: clamp(Math.floor(input.treat ?? DAILY_REFILL.treat), 0, 9),
+      medicine: clamp(Math.floor(input.medicine ?? DAILY_REFILL.medicine), 0, 9),
       lastRefillDay: input.lastRefillDay || getDayStamp(now),
     };
   }
@@ -749,10 +777,10 @@
 
     target.inventory = {
       ...target.inventory,
-      meal: 5,
-      snack: 3,
-      treat: 1,
-      medicine: 2,
+      meal: Math.max(target.inventory.meal || 0, DAILY_REFILL.meal),
+      snack: Math.max(target.inventory.snack || 0, DAILY_REFILL.snack),
+      treat: Math.max(target.inventory.treat || 0, DAILY_REFILL.treat),
+      medicine: Math.max(target.inventory.medicine || 0, DAILY_REFILL.medicine),
       lastRefillDay: today,
     };
     addEvent("Daily items refilled", now, target);
@@ -1149,10 +1177,18 @@
       state.energy = clamp(state.energy - energyCost, 0, 100);
       state.weight = Math.max(1, state.weight - 1);
       if (won) {
+        const closeWin = distance <= 6;
+        const coinReward = closeWin ? 3 : 2;
         state.happiness = clamp(state.happiness + (distance <= 6 ? 2 : 1), 0, 4);
+        state.coins = clamp(state.coins + coinReward, 0, 999);
+        if (closeWin) {
+          state.inventory.treat = clamp(state.inventory.treat + 1, 0, 9);
+        } else {
+          state.inventory.snack = clamp(state.inventory.snack + 1, 0, 9);
+        }
         state.logbook.gamesWon += 1;
-        state.message = "WIN";
-        addEvent(`Won timing game (${position})`);
+        state.message = `WIN +${coinReward}C`;
+        addEvent(`Won game +${coinReward}C ${closeWin ? "+treat" : "+snack"} (${position})`);
       } else {
         state.happiness = clamp(state.happiness - 1, 0, 4);
         state.message = `${position}`;
@@ -1265,6 +1301,53 @@
     return true;
   }
 
+  function showShop() {
+    if (!canActWhileAwake()) {
+      return false;
+    }
+
+    activePanel = activePanel === "shop" ? null : "shop";
+    gameRound = null;
+    state.message = activePanel === "shop" ? "SHOP" : "READY";
+    playSound("click");
+    render();
+    return true;
+  }
+
+  function buySupply(itemKey) {
+    if (!canActWhileAwake()) {
+      return false;
+    }
+
+    const item = SHOP_ITEMS[itemKey];
+    if (!item) {
+      return blocked("BAD ITEM");
+    }
+
+    mutate(() => {
+      refillInventoryIfNeeded(state);
+      if (state.coins < item.cost) {
+        state.message = "NO COIN";
+        timers.flashUntil = Date.now() + 900;
+        return;
+      }
+
+      if (state.inventory[item.stockKey] >= 9) {
+        state.message = "FULL";
+        timers.flashUntil = Date.now() + 900;
+        return;
+      }
+
+      state.coins -= item.cost;
+      state.inventory[item.stockKey] = clamp(state.inventory[item.stockKey] + 1, 0, 9);
+      state.message = `${item.label} +1`;
+      addEvent(`Bought ${item.label}`);
+      timers.flashUntil = Date.now() + 900;
+    });
+    playSound("click");
+    return getInventory();
+  }
+
   function showStatus() {
     if (!state.petType) {
       activePanel = "select";
@@ -1301,6 +1384,24 @@
     activePanel = activePanel === "settings" ? null : "settings";
     gameRound = null;
     state.message = activePanel === "settings" ? "SET" : "READY";
+    playSound("click");
+    render();
+    return true;
+  }
+
+  function showManual() {
+    activePanel = activePanel === "manual" ? (state.petType ? null : "select") : "manual";
+    gameRound = null;
+    state.message = activePanel === "manual" ? "MANUAL" : (state.petType ? deriveMessage() : "CHOOSE");
+    playSound("click");
+    render();
+    return true;
+  }
+
+  function showAbout() {
+    activePanel = activePanel === "about" ? (state.petType ? null : "select") : "about";
+    gameRound = null;
+    state.message = activePanel === "about" ? "ABOUT" : (state.petType ? deriveMessage() : "CHOOSE");
     playSound("click");
     render();
     return true;
@@ -1349,26 +1450,10 @@
     return true;
   }
 
-  function showDebug() {
-    if (!state.petType) {
-      activePanel = "select";
-      state.message = "CHOOSE";
-      render();
-      return false;
-    }
-
-    activePanel = activePanel === "debug" ? null : "debug";
-    gameRound = null;
-    state.message = activePanel === "debug" ? "DEBUG" : "READY";
-    playSound("click");
-    render();
-    return true;
-  }
-
   function closePanel() {
-    activePanel = null;
+    activePanel = state.petType ? null : "select";
     gameRound = null;
-    state.message = deriveMessage();
+    state.message = state.petType ? deriveMessage() : "CHOOSE";
     playSound("click");
     render();
     return true;
@@ -1880,13 +1965,18 @@
     dom.selectPanel.hidden = activePanel !== "select";
     dom.onboardingPanel.hidden = activePanel !== "onboarding";
     dom.foodPanel.hidden = activePanel !== "food";
+    dom.shopPanel.hidden = activePanel !== "shop";
     dom.gamePanel.hidden = activePanel !== "game";
     dom.logPanel.hidden = activePanel !== "log";
     dom.settingsPanel.hidden = activePanel !== "settings";
-    dom.debugPanel.hidden = activePanel !== "debug";
+    dom.manualPanel.hidden = activePanel !== "manual";
+    dom.aboutPanel.hidden = activePanel !== "about";
     renderFoodPanel();
+    renderShopPanel();
     renderLogPanel();
     renderSettingsPanel();
+    renderManualPanel();
+    renderAboutPanel();
     if (dom.gamePrompt) {
       dom.gamePrompt.textContent = gameRound ? "Stop near 50" : "Press game";
     }
@@ -1895,9 +1985,35 @@
   function renderFoodPanel() {
     if (!dom.mealButton) return;
     refillInventoryIfNeeded(state);
+    if (dom.foodCoinDisplay) {
+      dom.foodCoinDisplay.textContent = `COIN ${state.coins}`;
+    }
     dom.mealButton.textContent = `MEAL ${state.inventory.meal}`;
     dom.snackButton.textContent = `SNACK ${state.inventory.snack}`;
     dom.treatButton.textContent = `TREAT ${state.inventory.treat}`;
+  }
+
+  function renderShopPanel() {
+    if (!dom.shopPanel) return;
+    refillInventoryIfNeeded(state);
+    const rows = Object.entries(SHOP_ITEMS).map(([key, item]) => {
+      const stock = state.inventory[item.stockKey];
+      const disabled = state.coins < item.cost || stock >= 9 ? "disabled" : "";
+      return `
+        <div class="shop-row">
+          <span>${item.label}</span>
+          <span>${stock}/9</span>
+          <button class="lcd-button" type="button" data-shop-item="${key}" ${disabled}>${item.cost}C</button>
+        </div>
+      `;
+    });
+
+    dom.shopPanel.innerHTML = `
+      <h2>Shop</h2>
+      <p>COIN ${state.coins}</p>
+      <div class="shop-list">${rows.join("")}</div>
+      <button class="lcd-button" type="button" data-action="showFoodMenu">BACK</button>
+    `;
   }
 
   function renderLogPanel() {
@@ -1915,6 +2031,42 @@
     dom.rhythmDisplay.textContent = `DAY ${formatHour(state.rhythm.wakeHour)}-${formatHour(state.rhythm.sleepHour)}`;
   }
 
+  function renderManualPanel() {
+    if (!dom.manualPanel || activePanel !== "manual") return;
+    dom.manualPanel.innerHTML = `
+      <h2>Manual</h2>
+      <p><strong>Goal:</strong> keep pet alive, clean, happy, fed, and rested.</p>
+      <ul>
+        <li><strong>M/FOOD:</strong> meal, snack, treat, shop.</li>
+        <li><strong>L:</strong> sleep. Energy +1 every 10 seconds.</li>
+        <li><strong>G:</strong> timing game. Stop near 50 for coin/reward.</li>
+        <li><strong>W:</strong> clean all poop.</li>
+        <li><strong>+:</strong> use medicine when sick.</li>
+        <li><strong>S:</strong> status, care, evolution, coin, weight.</li>
+        <li><strong>D:</strong> use only when message says CALL.</li>
+      </ul>
+      <p>Daily refill top-up: MEAL 4, SNACK 4, TREAT 1, MED 2.</p>
+      <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
+    `;
+  }
+
+  function renderAboutPanel() {
+    if (!dom.aboutPanel || activePanel !== "about") return;
+    dom.aboutPanel.innerHTML = `
+      <h2>About</h2>
+      <div class="status-grid">
+        <span>App</span><strong>Retro Web Tamago</strong>
+        <span>Version</span><strong>${APP_VERSION}</strong>
+        <span>Build</span><strong>Static Web</strong>
+        <span>Engine</span><strong>Vanilla JS</strong>
+        <span>Save</span><strong>localStorage</strong>
+        <span>Deploy</span><strong>Vercel OK</strong>
+      </div>
+      <p>Save data stays in this browser/device.</p>
+      <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
+    `;
+  }
+
   function formatHour(hour) {
     return String(hour).padStart(2, "0");
   }
@@ -1930,6 +2082,7 @@
       ["Persona", state.personality],
       ["Age", `${state.age} day`],
       ["Weight", `${state.weight} oz`],
+      ["Coin", state.coins],
       ["Build", getWeightTier(state)],
       ["Evolve", determineEvolution(state)],
       ["Care", `${calculateCareQuality(state)}/160`],
@@ -1962,9 +2115,10 @@
     const buttons = document.querySelectorAll("[data-action]");
     buttons.forEach((button) => {
       const action = button.dataset.action;
-      const blockedByDeath = state.isDead && action !== "resetGame";
-      const blockedByNoPet = !state.petType && !["resetGame", "toggleSound"].includes(action);
-      const blockedBySleep = state.isSleeping && ["showFoodMenu", "feedMeal", "feedSnack", "feedTreat", "playGame", "disciplinePet"].includes(action);
+      const alwaysAllowed = ["resetGame", "toggleSound", "showManual", "showAbout", "closePanel"];
+      const blockedByDeath = state.isDead && !alwaysAllowed.includes(action);
+      const blockedByNoPet = !state.petType && !alwaysAllowed.includes(action);
+      const blockedBySleep = state.isSleeping && ["showFoodMenu", "showShop", "feedMeal", "feedSnack", "feedTreat", "playGame", "disciplinePet"].includes(action);
       const isActive = (action === "toggleSleep" && state.isSleeping) || (action === "toggleSound" && state.soundEnabled);
       button.disabled = blockedByNoPet || blockedByDeath || blockedBySleep;
       button.classList.toggle("is-active", isActive);
@@ -2052,15 +2206,15 @@
         return;
       }
 
-      const debugButton = event.target.closest("[data-debug-time]");
-      if (debugButton) {
-        simulateTime(Number(debugButton.dataset.debugTime));
-        return;
-      }
-
       const rhythmButton = event.target.closest("[data-rhythm]");
       if (rhythmButton) {
         adjustRhythm(rhythmButton.dataset.rhythm);
+        return;
+      }
+
+      const shopButton = event.target.closest("[data-shop-item]");
+      if (shopButton) {
+        buySupply(shopButton.dataset.shopItem);
         return;
       }
 
@@ -2080,6 +2234,8 @@
   const actions = {
     selectPet,
     showFoodMenu,
+    showShop,
+    buySupply,
     feedMeal,
     feedSnack,
     feedTreat,
@@ -2092,10 +2248,11 @@
     showStatus,
     showLog,
     showSettings,
+    showManual,
+    showAbout,
     finishOnboarding,
     adjustRhythm,
     requestNotifications,
-    showDebug,
     closePanel,
     toggleSound,
     resetGame,
@@ -2110,6 +2267,9 @@
     getEvolution,
     saveState,
     rules: RULES,
+    appVersion: APP_VERSION,
+    dailyRefill: DAILY_REFILL,
+    shopItems: SHOP_ITEMS,
     storageKey: STORAGE_KEY,
     simulateTime,
     simulateOffline(milliseconds) {
