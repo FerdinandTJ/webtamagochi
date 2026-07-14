@@ -56,20 +56,39 @@
                 <button class="lcd-button" type="button" data-pet-choice="jelly">JELLY</button>
               </div>
             </div>
+            <div class="menu-panel" id="onboardingPanel" hidden>
+              <h2>Quick Start</h2>
+              <p>M FOOD / L SLEEP</p>
+              <p>G PLAY / S STATUS</p>
+              <p>D ONLY ON CALL</p>
+              <button class="lcd-button" type="button" data-action="finishOnboarding">OK</button>
+            </div>
             <div class="menu-panel" id="foodPanel" hidden>
               <h2>Food</h2>
-              <button class="lcd-button" type="button" data-action="feedMeal">MEAL</button>
-              <button class="lcd-button" type="button" data-action="feedSnack">SNACK</button>
+              <button class="lcd-button" type="button" data-action="feedMeal" id="mealButton">MEAL</button>
+              <button class="lcd-button" type="button" data-action="feedSnack" id="snackButton">SNACK</button>
+              <button class="lcd-button" type="button" data-action="feedTreat" id="treatButton">TREAT</button>
               <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
             </div>
             <div class="menu-panel" id="gamePanel" hidden>
-              <h2>Guess</h2>
-              <p id="gamePrompt">Pick 1-3</p>
+              <h2>Timing</h2>
+              <p id="gamePrompt">Stop near 50</p>
               <div class="choice-row">
-                <button class="lcd-button" type="button" data-game-choice="1">1</button>
-                <button class="lcd-button" type="button" data-game-choice="2">2</button>
-                <button class="lcd-button" type="button" data-game-choice="3">3</button>
+                <button class="lcd-button" type="button" data-game-choice="stop">STOP</button>
               </div>
+              <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
+            </div>
+            <div class="menu-panel log-panel" id="logPanel" hidden></div>
+            <div class="menu-panel settings-panel" id="settingsPanel" hidden>
+              <h2>Settings</h2>
+              <p id="rhythmDisplay">DAY 08-22</p>
+              <div class="choice-row">
+                <button class="lcd-button" type="button" data-rhythm="wakeDown">W-</button>
+                <button class="lcd-button" type="button" data-rhythm="wakeUp">W+</button>
+                <button class="lcd-button" type="button" data-rhythm="sleepDown">S-</button>
+                <button class="lcd-button" type="button" data-rhythm="sleepUp">S+</button>
+              </div>
+              <button class="lcd-button" type="button" data-action="requestNotifications">NOTIFY</button>
               <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
             </div>
             <div class="menu-panel" id="debugPanel" hidden>
@@ -120,6 +139,8 @@
 
       <footer class="controls">
         <button class="main-button" type="button" data-action="showFoodMenu">FOOD</button>
+        <button class="main-button" type="button" data-action="showLog">LOG</button>
+        <button class="main-button" type="button" data-action="showSettings">SET</button>
         <button class="main-button" type="button" data-action="showDebug">DEBUG</button>
         <button class="main-button" type="button" data-action="toggleSound">SND</button>
         <button class="main-button" type="button" data-action="resetGame">RESET</button>

@@ -14,10 +14,12 @@
     happinessDecayMs: 6 * MINUTE,
     awakeEnergyDecayMs: 4 * MINUTE,
     sleepEnergyGainMs: 10 * 1000,
+    sleepHungerDecayMs: 4 * HOUR,
+    sleepHappinessDecayMs: 5 * HOUR,
     poopAfterMealMs: 4 * MINUTE,
     ageStepMs: DAY,
     sicknessCheckMs: 8 * MINUTE,
-    deathAfterCriticalMs: 12 * HOUR,
+    deathAfterCriticalMs: 24 * HOUR,
     disciplineCallMs: 12 * MINUTE,
   };
 
@@ -27,36 +29,42 @@
       energy: 85,
       happiness: 4,
       weight: 10,
+      personality: "balanced",
     },
     dino: {
       label: "DINO",
       energy: 90,
       happiness: 3,
       weight: 12,
+      personality: "playful",
     },
     panda: {
       label: "PANDA",
       energy: 78,
       happiness: 4,
       weight: 11,
+      personality: "sleepy",
     },
     bunny: {
       label: "BUNNY",
       energy: 82,
       happiness: 4,
       weight: 9,
+      personality: "social",
     },
     shiba: {
       label: "SHIBA",
       energy: 84,
       happiness: 3,
       weight: 12,
+      personality: "stubborn",
     },
     jelly: {
       label: "JELLY",
       energy: 88,
       happiness: 4,
       weight: 8,
+      personality: "gentle",
     },
   };
 
@@ -68,9 +76,16 @@
     pet: document.getElementById("pixelPet"),
     poopLayer: document.getElementById("poopLayer"),
     selectPanel: document.getElementById("selectPanel"),
+    onboardingPanel: document.getElementById("onboardingPanel"),
     foodPanel: document.getElementById("foodPanel"),
+    mealButton: document.getElementById("mealButton"),
+    snackButton: document.getElementById("snackButton"),
+    treatButton: document.getElementById("treatButton"),
     gamePanel: document.getElementById("gamePanel"),
     gamePrompt: document.getElementById("gamePrompt"),
+    logPanel: document.getElementById("logPanel"),
+    settingsPanel: document.getElementById("settingsPanel"),
+    rhythmDisplay: document.getElementById("rhythmDisplay"),
     debugPanel: document.getElementById("debugPanel"),
     statusPanel: document.getElementById("statusPanel"),
     hungerMeter: document.getElementById("hungerMeter"),
@@ -566,6 +581,7 @@
       weight: 10,
       petType: null,
       petName: "",
+      personality: "balanced",
       age: 0,
       poopCount: 0,
       isSleeping: false,
@@ -573,6 +589,21 @@
       attention: false,
       needsDiscipline: false,
       soundEnabled: true,
+      onboardingSeen: false,
+      notificationsEnabled: false,
+      lastNotificationAt: 0,
+      rhythm: {
+        wakeHour: 8,
+        sleepHour: 22,
+      },
+      inventory: {
+        meal: 5,
+        snack: 3,
+        treat: 1,
+        medicine: 2,
+        lastRefillDay: getDayStamp(now),
+      },
+      events: [],
       logbook: createLogbook(),
       mealsSincePoop: 0,
       lastMealTimestamp: 0,
@@ -587,6 +618,7 @@
         sickness: 0,
         age: 0,
         disciplineCall: 0,
+        rhythmPenalty: 0,
       },
       message: "READY",
     };
@@ -629,11 +661,18 @@
     merged.weight = Math.max(1, Math.round(merged.weight));
     merged.petType = normalizePetType(merged.petType);
     merged.petName = merged.petType ? PET_TYPES[merged.petType].label : "";
+    merged.personality = merged.petType ? PET_TYPES[merged.petType].personality : "balanced";
     merged.age = Math.max(0, Math.floor(merged.age));
     merged.poopCount = clamp(Math.floor(merged.poopCount), 0, 4);
     merged.health = merged.health === "sick" ? "sick" : "healthy";
     merged.needsDiscipline = Boolean(merged.needsDiscipline);
     merged.soundEnabled = input.soundEnabled !== false;
+    merged.onboardingSeen = Boolean(input.onboardingSeen);
+    merged.notificationsEnabled = Boolean(input.notificationsEnabled);
+    merged.lastNotificationAt = Number(input.lastNotificationAt) || 0;
+    merged.rhythm = normalizeRhythm(input.rhythm);
+    merged.inventory = normalizeInventory(input.inventory, now);
+    merged.events = normalizeEvents(input.events);
     merged.logbook = normalizeLogbook(input.logbook);
     merged.lastSavedTimestamp = Number(merged.lastSavedTimestamp) || now;
     merged.bornTimestamp = Number(merged.bornTimestamp) || now;
@@ -641,6 +680,27 @@
     merged.criticalSince = Number(merged.criticalSince) || null;
     merged.mealsSincePoop = Math.max(0, Math.floor(merged.mealsSincePoop || 0));
     return merged;
+  }
+
+  function normalizeRhythm(input = {}) {
+    return {
+      wakeHour: clamp(Number(input.wakeHour) || 8, 0, 23),
+      sleepHour: clamp(Number(input.sleepHour) || 22, 0, 23),
+    };
+  }
+
+  function normalizeInventory(input = {}, now = Date.now()) {
+    return {
+      meal: clamp(Math.floor(input.meal ?? 5), 0, 9),
+      snack: clamp(Math.floor(input.snack ?? 3), 0, 9),
+      treat: clamp(Math.floor(input.treat ?? 1), 0, 9),
+      medicine: clamp(Math.floor(input.medicine ?? 2), 0, 9),
+      lastRefillDay: input.lastRefillDay || getDayStamp(now),
+    };
+  }
+
+  function normalizeEvents(input = []) {
+    return Array.isArray(input) ? input.slice(0, 12).filter((event) => event && event.text && event.time) : [];
   }
 
   function normalizeLogbook(input = {}) {
@@ -672,6 +732,60 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
+  function getDayStamp(now = Date.now()) {
+    return new Date(now).toISOString().slice(0, 10);
+  }
+
+  function addEvent(text, now = Date.now(), target = state) {
+    const time = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    target.events = [{ time, text }, ...(target.events || [])].slice(0, 12);
+  }
+
+  function refillInventoryIfNeeded(target, now = Date.now()) {
+    const today = getDayStamp(now);
+    if (target.inventory.lastRefillDay === today) {
+      return;
+    }
+
+    target.inventory = {
+      ...target.inventory,
+      meal: 5,
+      snack: 3,
+      treat: 1,
+      medicine: 2,
+      lastRefillDay: today,
+    };
+    addEvent("Daily items refilled", now, target);
+  }
+
+  function isNaturalSleepTime(target, now = Date.now()) {
+    const hour = new Date(now).getHours();
+    const { wakeHour, sleepHour } = target.rhythm;
+    if (sleepHour === wakeHour) return false;
+    if (sleepHour > wakeHour) {
+      return hour >= sleepHour || hour < wakeHour;
+    }
+    return hour >= sleepHour && hour < wakeHour;
+  }
+
+  function maybeNotify(reason) {
+    if (!state.notificationsEnabled || typeof Notification === "undefined" || Notification.permission !== "granted") {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - state.lastNotificationAt < 30 * MINUTE) {
+      return;
+    }
+
+    state.lastNotificationAt = now;
+    try {
+      new Notification("Retro Web Tamagotchi", { body: reason });
+    } catch (error) {
+      state.notificationsEnabled = false;
+    }
+  }
+
   function applyOfflineTime(target, elapsedMs) {
     if (!target.petType || !elapsedMs || target.isDead) {
       return target;
@@ -694,6 +808,7 @@
       return;
     }
 
+    refillInventoryIfNeeded(target, now);
     applyAge(target, elapsedMs);
     applyHunger(target, elapsedMs);
     applyHappiness(target, elapsedMs);
@@ -701,6 +816,7 @@
     applyPoop(target, now);
     applyHealth(target, elapsedMs);
     applyDisciplineCall(target, elapsedMs);
+    applyDailyRhythm(target, elapsedMs, now);
     applyDeath(target, elapsedMs, now);
     updateAttention(target);
   }
@@ -716,17 +832,25 @@
 
   function applyHunger(target, elapsedMs) {
     target.accumulators.hunger += elapsedMs;
-    const loss = consumeSteps(target.accumulators, "hunger", RULES.hungerDecayMs);
+    const hungryMultiplier = target.personality === "gentle" ? 1.25 : target.personality === "playful" ? 0.9 : 1;
+    const interval = (target.isSleeping ? RULES.sleepHungerDecayMs : RULES.hungerDecayMs) * hungryMultiplier;
+    const loss = consumeSteps(target.accumulators, "hunger", interval);
     if (loss > 0) {
+      const before = target.hunger;
       target.hunger = clamp(target.hunger - loss, 0, 4);
+      if (before > 0 && target.hunger === 0) addEvent("Pet got hungry", Date.now(), target);
     }
   }
 
   function applyHappiness(target, elapsedMs) {
     target.accumulators.happiness += elapsedMs;
-    const loss = consumeSteps(target.accumulators, "happiness", RULES.happinessDecayMs);
+    const happyMultiplier = target.personality === "social" ? 1.25 : target.personality === "stubborn" ? 0.85 : 1;
+    const interval = (target.isSleeping ? RULES.sleepHappinessDecayMs : RULES.happinessDecayMs) * happyMultiplier;
+    const loss = consumeSteps(target.accumulators, "happiness", interval);
     if (loss > 0) {
+      const before = target.happiness;
       target.happiness = clamp(target.happiness - loss, 0, 4);
+      if (before > 0 && target.happiness === 0) addEvent("Pet got sad", Date.now(), target);
     }
   }
 
@@ -736,7 +860,8 @@
     target.accumulators[key] += elapsedMs;
     const steps = consumeSteps(target.accumulators, key, rate);
     if (steps > 0) {
-      const delta = target.isSleeping ? steps : steps * -3;
+      const awakeLoss = target.personality === "sleepy" ? -2 : -3;
+      const delta = target.isSleeping ? steps : steps * awakeLoss;
       target.energy = clamp(target.energy + delta, 0, 100);
     }
   }
@@ -748,6 +873,7 @@
 
     if (now - target.lastMealTimestamp >= RULES.poopAfterMealMs) {
       target.poopCount = clamp(target.poopCount + target.mealsSincePoop, 0, 4);
+      addEvent("Poop appeared", now, target);
       target.mealsSincePoop = 0;
       target.lastMealTimestamp = 0;
     }
@@ -767,6 +893,7 @@
       target.health = "sick";
       target.logbook.sicknessCount += 1;
       target.message = "SICK";
+      addEvent("Pet became sick", Date.now(), target);
       target.accumulators.sickness = 0;
       updateLogbook(target);
     }
@@ -788,6 +915,21 @@
       target.needsDiscipline = true;
       target.accumulators.disciplineCall = 0;
       target.message = "CALL";
+      addEvent("Pet called for attention", Date.now(), target);
+    }
+  }
+
+  function applyDailyRhythm(target, elapsedMs, now) {
+    if (target.isSleeping || !isNaturalSleepTime(target, now)) {
+      return;
+    }
+
+    target.accumulators.rhythmPenalty = (target.accumulators.rhythmPenalty || 0) + elapsedMs;
+    const penalty = consumeSteps(target.accumulators, "rhythmPenalty", HOUR);
+    if (penalty > 0) {
+      target.happiness = clamp(target.happiness - penalty, 0, 4);
+      target.energy = clamp(target.energy - penalty * 4, 0, 100);
+      addEvent("Stayed up past bedtime", now, target);
     }
   }
 
@@ -807,12 +949,16 @@
       target.isSleeping = false;
       target.logbook.deaths += 1;
       target.message = "DEAD";
+      addEvent("Pet died", now, target);
       updateLogbook(target);
     }
   }
 
   function updateAttention(target) {
     target.attention = !target.isDead && (target.needsDiscipline || target.hunger === 0 || target.happiness === 0 || target.health === "sick" || target.poopCount >= 4);
+    if (target === state && target.attention) {
+      maybeNotify(deriveMessage());
+    }
   }
 
   function consumeSteps(accumulators, key, intervalMs) {
@@ -866,6 +1012,7 @@
     mutate(() => {
       state.petType = type;
       state.petName = pet.label;
+      state.personality = pet.personality;
       state.energy = pet.energy;
       state.happiness = pet.happiness;
       state.weight = pet.weight;
@@ -874,7 +1021,8 @@
       state.isDead = false;
       state.isSleeping = false;
       state.message = `${pet.label} OK`;
-      activePanel = null;
+      addEvent(`${pet.label} joined you`);
+      activePanel = state.onboardingSeen ? null : "onboarding";
       timers.flashUntil = Date.now() + 1200;
     });
     playSound("win");
@@ -887,11 +1035,19 @@
     }
 
     mutate(() => {
+      refillInventoryIfNeeded(state);
+      if (state.inventory.meal <= 0) {
+        state.message = "NO MEAL";
+        timers.flashUntil = Date.now() + 900;
+        return;
+      }
+      state.inventory.meal -= 1;
       state.hunger = clamp(state.hunger + 1, 0, 4);
       state.weight += 1;
       state.mealsSincePoop += 1;
       state.lastMealTimestamp = Date.now();
       state.message = "MEAL +1";
+      addEvent("Ate meal");
       activePanel = null;
       timers.flashUntil = Date.now() + 900;
     });
@@ -905,11 +1061,46 @@
     }
 
     mutate(() => {
+      refillInventoryIfNeeded(state);
+      if (state.inventory.snack <= 0) {
+        state.message = "NO SNACK";
+        timers.flashUntil = Date.now() + 900;
+        return;
+      }
+      state.inventory.snack -= 1;
       state.happiness = clamp(state.happiness + 1, 0, 4);
       state.weight += 2;
       state.mealsSincePoop += 1;
       state.lastMealTimestamp = Date.now();
       state.message = "SNACK";
+      addEvent("Ate snack");
+      activePanel = null;
+      timers.flashUntil = Date.now() + 900;
+    });
+    playSound("eat");
+    return true;
+  }
+
+  function feedTreat() {
+    if (!canActWhileAwake()) {
+      return false;
+    }
+
+    mutate(() => {
+      refillInventoryIfNeeded(state);
+      if (state.inventory.treat <= 0) {
+        state.message = "NO TREAT";
+        timers.flashUntil = Date.now() + 900;
+        return;
+      }
+      state.inventory.treat -= 1;
+      state.hunger = clamp(state.hunger + 1, 0, 4);
+      state.happiness = clamp(state.happiness + 1, 0, 4);
+      state.weight += 2;
+      state.mealsSincePoop += 1;
+      state.lastMealTimestamp = Date.now();
+      state.message = "TREAT";
+      addEvent("Ate treat");
       activePanel = null;
       timers.flashUntil = Date.now() + 900;
     });
@@ -926,17 +1117,18 @@
     }
 
     gameRound = {
-      target: Math.floor(Math.random() * 3) + 1,
+      target: 50,
       startedAt: Date.now(),
+      speed: 1300 + Math.floor(Math.random() * 600),
     };
     activePanel = "game";
-    state.message = "PICK 1-3";
+    state.message = "STOP 50";
     playSound("click");
     render();
     return { started: true };
   }
 
-  function chooseGame(choice) {
+  function chooseGame() {
     if (!gameRound) {
       return blocked("NO GAME");
     }
@@ -947,18 +1139,24 @@
       return false;
     }
 
-    const picked = Number(choice);
-    const won = picked === gameRound.target;
+    const elapsed = Date.now() - gameRound.startedAt;
+    const phase = (elapsed % gameRound.speed) / gameRound.speed;
+    const position = Math.round(phase <= 0.5 ? phase * 200 : (1 - phase) * 200);
+    const distance = Math.abs(position - gameRound.target);
+    const won = distance <= 14;
     mutate(() => {
-      state.energy = clamp(state.energy - 14, 0, 100);
+      const energyCost = state.personality === "playful" ? 10 : 14;
+      state.energy = clamp(state.energy - energyCost, 0, 100);
       state.weight = Math.max(1, state.weight - 1);
       if (won) {
-        state.happiness = clamp(state.happiness + 1, 0, 4);
+        state.happiness = clamp(state.happiness + (distance <= 6 ? 2 : 1), 0, 4);
         state.logbook.gamesWon += 1;
         state.message = "WIN";
+        addEvent(`Won timing game (${position})`);
       } else {
         state.happiness = clamp(state.happiness - 1, 0, 4);
-        state.message = "MISS";
+        state.message = `${position}`;
+        addEvent(`Missed timing game (${position})`);
       }
       updateLogbook(state);
       gameRound = null;
@@ -976,6 +1174,8 @@
 
     mutate(() => {
       state.isSleeping = !state.isSleeping;
+      state.accumulators.hunger = 0;
+      state.accumulators.happiness = 0;
       state.accumulators.energyAwake = 0;
       state.accumulators.energySleep = 0;
       state.message = state.isSleeping ? "LIGHT OFF" : "WAKE";
@@ -1011,10 +1211,18 @@
     }
 
     mutate(() => {
+      refillInventoryIfNeeded(state);
+      if (state.inventory.medicine <= 0) {
+        state.message = "NO MED";
+        timers.flashUntil = Date.now() + 900;
+        return;
+      }
+      state.inventory.medicine -= 1;
       state.health = "healthy";
       state.criticalSince = null;
       state.accumulators.sickness = 0;
       state.message = "HEALED";
+      addEvent("Used medicine");
       timers.flashUntil = Date.now() + 900;
     });
     playSound("heal");
@@ -1032,9 +1240,11 @@
         state.discipline = clamp(state.discipline + 12, 0, 100);
         state.needsDiscipline = false;
         state.message = "SCOLD";
+        addEvent("Discipline worked");
       } else {
         state.happiness = clamp(state.happiness - 1, 0, 4);
         state.message = "WRONG";
+        addEvent("Wrong discipline");
       }
       timers.flashUntil = Date.now() + 900;
     });
@@ -1069,6 +1279,74 @@
     playSound("click");
     render();
     return getState();
+  }
+
+  function showLog() {
+    if (!state.petType) {
+      activePanel = "select";
+      state.message = "CHOOSE";
+      render();
+      return false;
+    }
+
+    activePanel = activePanel === "log" ? null : "log";
+    gameRound = null;
+    state.message = activePanel === "log" ? "LOG" : "READY";
+    playSound("click");
+    render();
+    return true;
+  }
+
+  function showSettings() {
+    activePanel = activePanel === "settings" ? null : "settings";
+    gameRound = null;
+    state.message = activePanel === "settings" ? "SET" : "READY";
+    playSound("click");
+    render();
+    return true;
+  }
+
+  function finishOnboarding() {
+    state.onboardingSeen = true;
+    activePanel = null;
+    state.message = "READY";
+    addEvent("Tutorial finished");
+    saveState();
+    playSound("click");
+    render();
+    return true;
+  }
+
+  function adjustRhythm(command) {
+    const rhythm = { ...state.rhythm };
+    if (command === "wakeDown") rhythm.wakeHour = (rhythm.wakeHour + 23) % 24;
+    if (command === "wakeUp") rhythm.wakeHour = (rhythm.wakeHour + 1) % 24;
+    if (command === "sleepDown") rhythm.sleepHour = (rhythm.sleepHour + 23) % 24;
+    if (command === "sleepUp") rhythm.sleepHour = (rhythm.sleepHour + 1) % 24;
+    state.rhythm = rhythm;
+    state.message = "RHYTHM";
+    addEvent(`Rhythm ${formatHour(rhythm.wakeHour)}-${formatHour(rhythm.sleepHour)}`);
+    saveState();
+    playSound("click");
+    render();
+    return rhythm;
+  }
+
+  function requestNotifications() {
+    if (typeof Notification === "undefined") {
+      state.message = "NO API";
+      render();
+      return false;
+    }
+
+    Notification.requestPermission().then((permission) => {
+      state.notificationsEnabled = permission === "granted";
+      state.message = state.notificationsEnabled ? "NOTIFY ON" : "NO NOTIFY";
+      addEvent(state.notificationsEnabled ? "Notifications enabled" : "Notifications blocked");
+      saveState();
+      render();
+    });
+    return true;
   }
 
   function showDebug() {
@@ -1130,11 +1408,27 @@
     return JSON.parse(JSON.stringify(state.logbook));
   }
 
+  function getEvents() {
+    return JSON.parse(JSON.stringify(state.events || []));
+  }
+
+  function getInventory() {
+    refillInventoryIfNeeded(state);
+    return JSON.parse(JSON.stringify(state.inventory));
+  }
+
   function getEvolution() {
     return {
       stage: determineEvolution(state),
       careQuality: calculateCareQuality(state),
     };
+  }
+
+  function getWeightTier(target = state) {
+    if (target.weight >= 26) return "heavy";
+    if (target.weight >= 24) return "overweight";
+    if (target.weight >= 18) return "wide";
+    return "normal";
   }
 
   function updateLogbook(target) {
@@ -1147,9 +1441,10 @@
 
   function determineEvolution(target) {
     const quality = calculateCareQuality(target);
+    if (target.weight >= 26) return "heavy";
     if (target.age <= 0) return "baby";
     if (target.age < 3) return "teen";
-    if (target.weight >= 26 || quality < 55) return "heavy";
+    if (quality < 55) return "heavy";
     if (target.age >= 5 && target.discipline >= 70 && quality >= 125) return "champion";
     return "adult";
   }
@@ -1266,8 +1561,51 @@
       shiba: drawShibaPet,
       jelly: drawJellyPet,
     };
-    (renderers[type] || renderers.sprout)(context);
+    if (determineEvolution(state) === "baby") {
+      drawBabyPet(context, type);
+    } else {
+      (renderers[type] || renderers.sprout)(context);
+      if (determineEvolution(state) === "teen") {
+        drawBox(context, "#ffffff", 25, 11, 2, 2);
+      }
+    }
     drawCuteStateOverlay(context);
+  }
+
+  function drawBabyPet(context, type) {
+    const fills = {
+      sprout: "#b8ef55",
+      dino: "#59c7ee",
+      panda: "#fff8ef",
+      bunny: "#fff8ef",
+      shiba: "#f4a51f",
+      jelly: "#59c7ee",
+    };
+    const fill = fills[type] || fills.sprout;
+    drawSpanRows(context, "#06150f", [
+      [10, 12, 8], [11, 10, 12], [12, 9, 14], [13, 8, 16], [14, 8, 16],
+      [15, 8, 16], [16, 8, 16], [17, 9, 14], [18, 10, 12], [19, 12, 8],
+    ]);
+    drawSpanRows(context, fill, [
+      [11, 12, 8], [12, 11, 10], [13, 10, 12], [14, 10, 12],
+      [15, 10, 12], [16, 10, 12], [17, 11, 10], [18, 12, 8],
+    ]);
+    if (type === "sprout") {
+      drawBox(context, "#063b21", 15, 6, 2, 5);
+      drawBox(context, "#9ad545", 11, 5, 5, 2);
+      drawBox(context, "#9ad545", 17, 5, 5, 2);
+    }
+    if (type === "bunny") {
+      drawBox(context, "#06150f", 10, 4, 3, 8);
+      drawBox(context, "#06150f", 20, 4, 3, 8);
+      drawBox(context, "#fff8ef", 11, 5, 1, 6);
+      drawBox(context, "#fff8ef", 21, 5, 1, 6);
+    }
+    drawGlossyEye(context, 12, 13);
+    drawGlossyEye(context, 19, 13);
+    drawBox(context, "#ff6f9f", 10, 18, 2, 1);
+    drawBox(context, "#ff6f9f", 22, 18, 2, 1);
+    drawBox(context, "#06150f", 16, 18, 2, 1);
   }
 
   function drawSproutPet(context) {
@@ -1312,6 +1650,7 @@
     drawBox(context, "#06222e", 19, 20, 3, 2);
     drawBox(context, "#06150f", 12, 10, 2, 4);
     drawBox(context, "#06150f", 16, 12, 1, 1);
+    drawWeightBulge(context, "#2f96c8", "#06222e");
   }
 
   function drawPandaPet(context) {
@@ -1380,24 +1719,59 @@
     drawBox(context, "#59c7ee", 10, 18, 1, 6);
     drawBox(context, "#59c7ee", 16, 18, 1, 7);
     drawBox(context, "#59c7ee", 22, 18, 1, 6);
+    drawWeightBulge(context, "#59c7ee", "#06150f");
   }
 
   function drawRoundedPetBody(context, outline, fill) {
-    drawSpanRows(context, outline, [
+    const extra = getWeightExtra();
+    drawSpanRows(context, outline, widenRows([
       [8, 11, 10], [9, 8, 16], [10, 7, 18], [11, 6, 20], [12, 5, 22],
       [13, 5, 22], [14, 4, 24], [15, 4, 24], [16, 4, 24], [17, 4, 24],
       [18, 4, 24], [19, 4, 24], [20, 5, 22], [21, 5, 22], [22, 6, 20],
       [23, 7, 18], [24, 8, 16], [25, 9, 14], [26, 11, 10], [27, 12, 8],
-    ]);
-    drawSpanRows(context, fill, [
+    ], extra));
+    drawSpanRows(context, fill, widenRows([
       [9, 11, 10], [10, 9, 14], [11, 8, 16], [12, 7, 18], [13, 7, 18],
       [14, 6, 20], [15, 6, 20], [16, 6, 20], [17, 6, 20], [18, 6, 20],
       [19, 6, 20], [20, 7, 18], [21, 7, 18], [22, 8, 16], [23, 9, 14],
       [24, 10, 12], [25, 11, 10],
-    ]);
+    ], extra));
     drawBox(context, "rgba(255,255,255,0.28)", 8, 12, 2, 5);
     drawBox(context, "rgba(255,255,255,0.28)", 10, 10, 5, 1);
     drawBox(context, "rgba(0,0,0,0.1)", 24, 15, 2, 5);
+    if (extra >= 2) {
+      drawBox(context, "rgba(255,255,255,0.24)", 12, 23, 8, 3);
+    }
+  }
+
+  function getWeightExtra() {
+    const tier = getWeightTier();
+    if (tier === "heavy") return 3;
+    if (tier === "overweight") return 2;
+    if (tier === "wide") return 1;
+    return 0;
+  }
+
+  function widenRows(rows, extra) {
+    if (!extra) return rows;
+    return rows.map(([y, x, width]) => {
+      const lowerBody = y >= 12 && y <= 25;
+      if (!lowerBody) return [y, x, width];
+      const applied = y >= 15 && y <= 22 ? extra : Math.max(0, extra - 1);
+      return [y, Math.max(0, x - applied), Math.min(32, width + applied * 2)];
+    });
+  }
+
+  function drawWeightBulge(context, fill, outline) {
+    const extra = getWeightExtra();
+    if (!extra) return;
+    const rows = extra >= 3
+      ? [[16, 3, 4], [17, 2, 5], [18, 2, 5], [19, 3, 4], [16, 25, 4], [17, 25, 5], [18, 25, 5], [19, 25, 4]]
+      : extra >= 2
+        ? [[17, 3, 3], [18, 3, 3], [17, 26, 3], [18, 26, 3]]
+        : [[18, 4, 2], [18, 26, 2]];
+    drawSpanRows(context, outline, rows);
+    drawSpanRows(context, fill, rows.map(([y, x, width]) => [y, x + 1, Math.max(1, width - 2)]));
   }
 
   function drawCuteFace(context, leftEyeX, eyeY, options = {}) {
@@ -1504,12 +1878,45 @@
 
   function renderPanels() {
     dom.selectPanel.hidden = activePanel !== "select";
+    dom.onboardingPanel.hidden = activePanel !== "onboarding";
     dom.foodPanel.hidden = activePanel !== "food";
     dom.gamePanel.hidden = activePanel !== "game";
+    dom.logPanel.hidden = activePanel !== "log";
+    dom.settingsPanel.hidden = activePanel !== "settings";
     dom.debugPanel.hidden = activePanel !== "debug";
+    renderFoodPanel();
+    renderLogPanel();
+    renderSettingsPanel();
     if (dom.gamePrompt) {
-      dom.gamePrompt.textContent = gameRound ? "Pick 1-3" : "Press game";
+      dom.gamePrompt.textContent = gameRound ? "Stop near 50" : "Press game";
     }
+  }
+
+  function renderFoodPanel() {
+    if (!dom.mealButton) return;
+    refillInventoryIfNeeded(state);
+    dom.mealButton.textContent = `MEAL ${state.inventory.meal}`;
+    dom.snackButton.textContent = `SNACK ${state.inventory.snack}`;
+    dom.treatButton.textContent = `TREAT ${state.inventory.treat}`;
+  }
+
+  function renderLogPanel() {
+    if (!dom.logPanel) return;
+    const entries = state.events && state.events.length ? state.events : [{ time: "--:--", text: "No events yet" }];
+    dom.logPanel.innerHTML = `
+      <h2>Log</h2>
+      ${entries.map((event) => `<div class="log-entry">${event.time} ${event.text}</div>`).join("")}
+      <button class="lcd-button" type="button" data-action="closePanel">BACK</button>
+    `;
+  }
+
+  function renderSettingsPanel() {
+    if (!dom.rhythmDisplay) return;
+    dom.rhythmDisplay.textContent = `DAY ${formatHour(state.rhythm.wakeHour)}-${formatHour(state.rhythm.sleepHour)}`;
+  }
+
+  function formatHour(hour) {
+    return String(hour).padStart(2, "0");
   }
 
   function renderStatusPanel() {
@@ -1520,8 +1927,10 @@
 
     const rows = [
       ["Pet", state.petName || "none"],
+      ["Persona", state.personality],
       ["Age", `${state.age} day`],
       ["Weight", `${state.weight} oz`],
+      ["Build", getWeightTier(state)],
       ["Evolve", determineEvolution(state)],
       ["Care", `${calculateCareQuality(state)}/160`],
       ["Discipline", `${state.discipline}%`],
@@ -1537,6 +1946,8 @@
       ["Best Evo", state.logbook.bestEvolution],
       ["Call", state.needsDiscipline ? "yes" : "no"],
       ["Sound", state.soundEnabled ? "on" : "off"],
+      ["Notify", state.notificationsEnabled ? "on" : "off"],
+      ["Rhythm", `${formatHour(state.rhythm.wakeHour)}-${formatHour(state.rhythm.sleepHour)}`],
     ];
 
     dom.statusPanel.innerHTML = `
@@ -1553,7 +1964,7 @@
       const action = button.dataset.action;
       const blockedByDeath = state.isDead && action !== "resetGame";
       const blockedByNoPet = !state.petType && !["resetGame", "toggleSound"].includes(action);
-      const blockedBySleep = state.isSleeping && ["showFoodMenu", "feedMeal", "feedSnack", "playGame", "disciplinePet"].includes(action);
+      const blockedBySleep = state.isSleeping && ["showFoodMenu", "feedMeal", "feedSnack", "feedTreat", "playGame", "disciplinePet"].includes(action);
       const isActive = (action === "toggleSleep" && state.isSleeping) || (action === "toggleSound" && state.soundEnabled);
       button.disabled = blockedByNoPet || blockedByDeath || blockedBySleep;
       button.classList.toggle("is-active", isActive);
@@ -1647,6 +2058,12 @@
         return;
       }
 
+      const rhythmButton = event.target.closest("[data-rhythm]");
+      if (rhythmButton) {
+        adjustRhythm(rhythmButton.dataset.rhythm);
+        return;
+      }
+
       const button = event.target.closest("[data-action]");
       if (!button) {
         return;
@@ -1665,6 +2082,7 @@
     showFoodMenu,
     feedMeal,
     feedSnack,
+    feedTreat,
     playGame,
     chooseGame,
     toggleSleep,
@@ -1672,6 +2090,11 @@
     healPet,
     disciplinePet,
     showStatus,
+    showLog,
+    showSettings,
+    finishOnboarding,
+    adjustRhythm,
+    requestNotifications,
     showDebug,
     closePanel,
     toggleSound,
@@ -1682,6 +2105,8 @@
     ...actions,
     getState,
     getLogbook,
+    getEvents,
+    getInventory,
     getEvolution,
     saveState,
     rules: RULES,
